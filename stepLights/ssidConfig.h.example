@@ -1,0 +1,8 @@
+// Configuration:
+#define WLAN_SSID       "wifissid"       // Your WiFi AP.
+#define WLAN_PASS       "superSecret"    // Your WiFi AP password.
+#define MQTT_SERVER     "192.168.1.1"    // Address of the Raspberry Pi running MQTT server.
+#define MQTT_PORT       1883             // Standard MQTT port 1883.
+#define MQTT_USERNAME   ""               // Set to any username for the MQTT server (default none/empty).
+#define MQTT_PASSWORD   ""               // MQTT user password (default none/empty).
+
