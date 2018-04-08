@@ -674,22 +674,33 @@ static void modeDotInit() {
     (void) getValidParamValue(info.params, "oper", modeDotOperStr);
     const ModeDotOper modeDotOper = (ModeDotOper) _modeDotParseOper(modeDotOperStr.c_str());
 
-    uint32_t valueParam = 0;
+    uint64_t valueParam = 0;
     {
         String valueParamStr;
         if (getValidParamValue(info.params, "value", valueParamStr)) {
             valueParamStr.toLowerCase();
-            valueParam = strtoul(valueParamStr.c_str(), nullptr /*endptr*/, 0 /*base auto detect*/);
+            valueParam = strtoull(valueParamStr.c_str(), nullptr /*endptr*/, 0 /*base auto detect*/);
         }
     }
     valueParam = valueParam >> abs(getToIntParam(info.params, "shiftRight", 0));
     valueParam = valueParam << abs(getToIntParam(info.params, "shiftLeft", 0));
 
     // build a mask of the current pixels that have some color
-    uint32_t currentValue = 0;
-    for (uint16_t p=0; p < LEDS_PER_STRIP; ++p) if (strip.getPixelColor(p)) bitSet(currentValue, p);
+    uint64_t currentValue = 0;
+    for (uint16_t p=0; p < LEDS_PER_STRIP; ++p) {
+        const uint32_t currPixelColor = strip.getPixelColor(p);
+        if (currPixelColor != 0) {
+#ifdef DEBUG
+            Serial.print("strip "); Serial.print(targetStrip, DEC),
+            Serial.print(" pixel "); Serial.print(p, DEC); Serial.print(" has color 0x");
+            Serial.println(currPixelColor, HEX);
+#endif
+            // NOTE: using bitset or currentValue |= 1 << p; did not work above 31
+            currentValue += (uint64_t)1 << p;   // bitSet(currentValue, p);
+        }
+    }
 
-    uint32_t newValue = 0;
+    uint64_t newValue = 0;
     switch (modeDotOper) {
         case modeDotOperXor:  newValue = valueParam ^ currentValue; break;
         case modeDotOperAnd:  newValue = valueParam & currentValue; break;
@@ -703,9 +714,15 @@ static void modeDotInit() {
 #ifdef DEBUG
     Serial.print("dot mode oper: "); Serial.print(modeDotOperStr.c_str());
     Serial.print(" ("); Serial.print(modeDotOper, DEC); Serial.println(")");
-    Serial.print("  old: 0x"); Serial.println(currentValue, HEX);
-    Serial.print("param: 0x"); Serial.println(valueParam, HEX);
-    Serial.print("  new: 0x"); Serial.println(newValue, HEX);
+
+    Serial.print("  old: H0x"); Serial.print((uint32_t) (currentValue >> 32), HEX);
+    Serial.print(" L0x"); Serial.println((uint32_t) currentValue, HEX);
+
+    Serial.print("param: H0x"); Serial.print((uint32_t) (valueParam >> 32), HEX);
+    Serial.print(" L0x"); Serial.println((uint32_t) valueParam, HEX);
+
+    Serial.print("  new: H0x"); Serial.print((uint32_t) (newValue >> 32), HEX);
+    Serial.print(" L0x"); Serial.println((uint32_t) newValue, HEX);
 #endif // #ifdef DEBUG
 
     for (uint16_t p=0; p < LEDS_PER_STRIP; ++p) {
