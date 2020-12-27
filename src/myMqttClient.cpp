@@ -1,6 +1,8 @@
 #include "common.h"
 #include "myMqttClient.h"
 #include "ssidConfig.h"
+#include "tickerScheduler.h"
+#include <ArduinoOTA.h>
 
 // huzzah ref: https://www.adafruit.com/products/2821
 
@@ -10,11 +12,8 @@
 #define PIN_MQTT_LED_ON   HIGH
 #define PIN_MQTT_LED_OFF  LOW
 
-
-#define DEV_PREFIX "/garage_steps/"
-
 // note: admin_flags is really a debug thing. Normally never to be used!
-#define MQTT_SUB_ADMIN_FLAGS     "admin_flags"        
+#define MQTT_SUB_ADMIN_FLAGS     "admin_flags"
 #define MQTT_SUB_CRAZY_LED       "crazy_led"
 #define MQTT_SUB_DISABLE_MOTION  "disable_motion_sensor"
 #define MQTT_XUB_TRIGGER_MOTION  "trigger_motion"  // xub: sub and pub
@@ -23,13 +22,14 @@
 #define MQTT_PUB_OPER_FLAGS        "oper_flags"  // flags, motion, ...
 #define MQTT_PUB_NO_MOTION_MINUTES "no_motion_minutes"
 #define MQTT_PUB_LIGHT_MODE        "oper_light_mode"
+#define MQTT_PUB_IP                "ip"
 
 typedef void (*OnOffToggle)();
 
 // FWDs
 bool checkWifiConnected();
 bool checkMqttConnected();
-static void parseOnOffToggle(const char* subName, const char* message, 
+static void parseOnOffToggle(const char* subName, const char* message,
                              OnOffToggle onPtr, OnOffToggle offPtr, OnOffToggle togglePtr);
 
 MqttState mqttState;
@@ -51,39 +51,15 @@ Adafruit_MQTT_Subscribe service_sub_set_light_mode = Adafruit_MQTT_Subscribe(&mq
 Adafruit_MQTT_Publish service_pub_oper_flags = Adafruit_MQTT_Publish(&mqtt, DEV_PREFIX MQTT_PUB_OPER_FLAGS);
 Adafruit_MQTT_Publish service_pub_no_motion_minutes = Adafruit_MQTT_Publish(&mqtt, DEV_PREFIX MQTT_PUB_NO_MOTION_MINUTES);
 Adafruit_MQTT_Publish service_pub_oper_light_mode = Adafruit_MQTT_Publish(&mqtt, DEV_PREFIX MQTT_PUB_LIGHT_MODE);
+Adafruit_MQTT_Publish service_pub_oper_ip = Adafruit_MQTT_Publish(&mqtt, DEV_PREFIX MQTT_PUB_IP);
 Adafruit_MQTT_Publish service_pub_trigger_motion = Adafruit_MQTT_Publish(&mqtt, DEV_PREFIX MQTT_XUB_TRIGGER_MOTION);
 Adafruit_MQTT_Publish service_pub_set_light_mode = Adafruit_MQTT_Publish(&mqtt, DEV_PREFIX MQTT_XUB_SET_LIGHT_MODE);
-
-void initMyMqtt() {
-    memset(&mqttState, 0, sizeof(mqttState));
-
-    pinMode(PIN_MQTT_LED, OUTPUT);
-
-    digitalWrite(PIN_MQTT_LED, PIN_MQTT_LED_OFF);
-
-#ifdef DEBUG
-    // Connect to WiFi access point.
-    Serial.println();
-    Serial.print("Connecting to ");
-    Serial.println(WLAN_SSID);
-#endif
-
-    // Set WiFi to station mode
-    // https://www.exploreembedded.com/wiki/Arduino_Support_for_ESP8266_with_simple_test_code
-    if (!WiFi.mode(WIFI_STA)) {
-#ifdef DEBUG
-        Serial.println("Fatal: unable to set wifi mode");
-#endif
-        delay(1000);
-        ESP.restart();
-    }
-    WiFi.begin(WLAN_SSID, WLAN_PASS);
-}
 
 void myMqttLoop() {
     yield();  // make esp8266 happy
 
     if (!checkWifiConnected()) return;
+    ArduinoOTA.handle();
     if (!checkMqttConnected()) return;
 
     // Listen for updates on any subscribed MQTT feeds and process them all.
@@ -152,7 +128,7 @@ void myMqttLoop() {
             }
         } else {
 #ifdef DEBUG
-            Serial.print("got unexpected msg on subscription: "); 
+            Serial.print("got unexpected msg on subscription: ");
             Serial.println(subscription->topic);
 #endif
         }
@@ -160,6 +136,7 @@ void myMqttLoop() {
 }
 
 bool checkWifiConnected() {
+    static bool otaBegun = false;
     static bool lastConnected = false;
 
     const bool currConnected = WiFi.status() == WL_CONNECTED;
@@ -186,6 +163,14 @@ bool checkWifiConnected() {
                 ESP.restart();
             }
 
+            if (!otaBegun)
+            {
+                otaBegun = true;
+                ArduinoOTA.begin();
+#ifdef DEBUG
+                Serial.printf("Ready to perform OTA update via port %u\n", OTA_PORT);
+#endif
+            }
         } else {
 #ifdef DEBUG
             Serial.println("WiFi disconnected");
@@ -250,7 +235,7 @@ bool checkMqttConnected() {
     return currMqttConnected;
 }
 
-void mqtt1SecTick() {
+static void mqtt1SecTick() {
     static uint8_t lastFlags = 0;
     static uint32_t lastLightModeChanges = 0;
 
@@ -258,7 +243,7 @@ void mqtt1SecTick() {
 
 #ifdef DEBUG
     if (! mqtt.connected()) {
-        Serial.print("mqtt1SecTick"); 
+        Serial.print("mqtt1SecTick");
         Serial.print(" reconnectTics: "); Serial.print(mqttState.reconnectTicks, DEC);
         Serial.print(" mqtt_led: "); Serial.print(digitalRead(PIN_MQTT_LED) == PIN_MQTT_LED_ON ? "on" : "off");
         Serial.println("");
@@ -284,7 +269,7 @@ void mqtt1SecTick() {
     }
 }
 
-void mqtt10MinTick() {
+static void mqtt10MinTick() {
 #ifdef DEBUG
     Serial.println("mqtt10MinTick -- sending gratuitous state");
 #endif
@@ -304,6 +289,7 @@ void sendOperState() {
     }
 
     if (!service_pub_oper_flags.publish( (uint32_t) state.flags ) ||
+        !service_pub_oper_ip.publish(WiFi.localIP().toString().c_str()) ||
         !service_pub_no_motion_minutes.publish(noMotionMins)) {
 #ifdef DEBUG
         Serial.println("Unable to publish operational state");
@@ -323,16 +309,100 @@ void sendOperLightMode() {
     }
 }
 
-static void parseOnOffToggle(const char* subName, const char* message, 
+static void parseOnOffToggle(const char* subName, const char* message,
                              OnOffToggle onPtr, OnOffToggle offPtr, OnOffToggle togglePtr) {
-    if (onPtr != 0 && strncmp(message, "on", 2) == 0) { (*onPtr)(); } 
+    if (onPtr != 0 && strncmp(message, "on", 2) == 0) { (*onPtr)(); }
     else if (offPtr != 0 && strncmp(message, "off", 3) == 0) { (*offPtr)(); }
     else if (togglePtr != 0 && strncmp(message, "toggle", 6) == 0) { (*togglePtr)(); }
 
 #ifdef DEBUG
-    Serial.print("got msg on "); 
-    Serial.print(subName); 
+    Serial.print("got msg on ");
+    Serial.print(subName);
     Serial.print(": ");
     Serial.println(message);
 #endif
+}
+
+static void initOTA()
+{
+#ifdef OTA_PORT
+    // Port defaults to 8266
+    ArduinoOTA.setPort(OTA_PORT);
+#endif // #ifdef OTA_PORT
+
+#ifdef OTA_HOSTNAME
+    // Hostname defaults to esp8266-[ChipID]
+    ArduinoOTA.setHostname(OTA_HOSTNAME);
+#endif // #ifdef OTA_HOSTNAME
+
+#ifdef OTA_PASS
+    // No authentication by default
+    ArduinoOTA.setPassword(OTA_PASS);
+#elifdef OTA_MD5
+    // Password can be set with it's md5 value as well
+    ArduinoOTA.setPasswordHash(OTA_MD5);
+#endif // #ifdef OTA_PASS
+
+#ifdef DEBUG
+    ArduinoOTA.onStart([]() { Serial.println("Start updating"); });
+    ArduinoOTA.onEnd([]() { Serial.println("Ended updating"); });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR)
+        {
+            Serial.println("Auth Failed");
+        }
+        else if (error == OTA_BEGIN_ERROR)
+        {
+            Serial.println("Begin Failed");
+        }
+        else if (error == OTA_CONNECT_ERROR)
+        {
+            Serial.println("Connect Failed");
+        }
+        else if (error == OTA_RECEIVE_ERROR)
+        {
+            Serial.println("Receive Failed");
+        }
+        else if (error == OTA_END_ERROR)
+        {
+            Serial.println("End Failed");
+        }
+    });
+#endif
+}
+
+void initMyMqtt(TickerScheduler &ts) {
+    memset(&mqttState, 0, sizeof(mqttState));
+
+    pinMode(PIN_MQTT_LED, OUTPUT);
+
+    digitalWrite(PIN_MQTT_LED, PIN_MQTT_LED_OFF);
+
+#ifdef DEBUG
+    // Connect to WiFi access point.
+    Serial.println();
+    Serial.print("Connecting to ");
+    Serial.println(WLAN_SSID);
+#endif
+
+    // Set WiFi to station mode
+    // https://www.exploreembedded.com/wiki/Arduino_Support_for_ESP8266_with_simple_test_code
+    if (!WiFi.mode(WIFI_STA)) {
+#ifdef DEBUG
+        Serial.println("Fatal: unable to set wifi mode");
+#endif
+        delay(1000);
+        ESP.restart();
+    }
+    WiFi.begin(WLAN_SSID, WLAN_PASS);
+    initOTA();
+
+    // TickerScheduler
+    const uint32_t oneSec = 1000;
+    ts.sched(mqtt1SecTick, oneSec);
+    ts.sched(mqtt10MinTick, oneSec * 60 * 10);
 }

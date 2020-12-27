@@ -1,4 +1,5 @@
 #include "common.h"
+#include "tickerScheduler.h"
 #include <map>
 
 #include <Adafruit_NeoPixel.h>
@@ -52,7 +53,7 @@ static const uint8_t defaultMaxBrightness = 193;  // 0=dimmest, 255=max
 
 typedef struct {
     int currModeIndex;
-    int secsUntilModeExpires;  // -1 = never. If not provided, uses globalParams['defaultTimeout'] or defaultTimeoutInSeconds 
+    int secsUntilModeExpires;  // -1 = never. If not provided, uses globalParams['defaultTimeout'] or defaultTimeoutInSeconds
     StringMap globalParams;
     StringMap params;
 } Info;
@@ -111,7 +112,7 @@ static void modeOff1Sec() {
     changeLedStripMode(ledStripModeStair, params);
 }
 
-static const Mode modeOff = { ledStripModeOff, ledStripModeOffStr, modeOffInit /*init*/, 0 /*fast*/, 
+static const Mode modeOff = { ledStripModeOff, ledStripModeOffStr, modeOffInit /*init*/, 0 /*fast*/,
                               modeOff1Sec /*1sec*/, 0 /*5sec*/, 0 /*10sec*/, 0 /*1min*/, 0 /*5min*/};
 
 // --
@@ -139,7 +140,7 @@ static bool _modeStairFinished() {
     return true;
 }
 
-static bool _modeStairStripShow() {
+static void _modeStairStripShow() {
     for (int s = 0; s < STRIP_CNT; ++s) {
         Adafruit_NeoPixel& strip(*strips[s]);
 
@@ -294,8 +295,8 @@ static void modeStair5Sec() {
     }
 }
 
-static const Mode modeStair = { ledStripModeStair, ledStripModeStairStr, modeStairInit /*init*/, 
-                                modeStairFast /*fast*/, modeStair1Sec /*1sec*/, modeStair5Sec /*5sec*/, 
+static const Mode modeStair = { ledStripModeStair, ledStripModeStairStr, modeStairInit /*init*/,
+                                modeStairFast /*fast*/, modeStair1Sec /*1sec*/, modeStair5Sec /*5sec*/,
                                 0 /*10sec*/, 0 /*1min*/, 0 /*5min*/};
 
 // --
@@ -365,8 +366,8 @@ static void modeFill1Sec() { if (modeFillState.refresh1Sec) _modeFillShow(); }
 static void modeFill5Sec() { if (modeFillState.refresh5Sec) _modeFillShow(); }
 static void modeFill10Sec() { if (modeFillState.refresh10Sec) _modeFillShow(); }
 
-static const Mode modeFill = { ledStripModeFill, ledStripModeFillStr, modeFillInit /*init*/, 
-                               modeFillFast /*fast*/, modeFill1Sec /*1sec*/, modeFill5Sec /*5sec*/, 
+static const Mode modeFill = { ledStripModeFill, ledStripModeFillStr, modeFillInit /*init*/,
+                               modeFillFast /*fast*/, modeFill1Sec /*1sec*/, modeFill5Sec /*5sec*/,
                                modeFill10Sec /*10sec*/, 0 /*1min*/, 0 /*5min*/};
 
 // --
@@ -473,7 +474,7 @@ static void modeScanFast() {
                     modeScanState.pixelIncrement *= -1;
                     nextPixel = _modeScanAddPixelIncrement(initialNextPixelValue);
                 } else if (modeScanState.pixelIncrement < 0 && nextPixel > prevPixel) {
-                    modeScanState.pixelIncrement *= -1; 
+                    modeScanState.pixelIncrement *= -1;
                     nextPixel = _modeScanAddPixelIncrement(initialNextPixelValue);
                 }
             }
@@ -494,7 +495,7 @@ static void modeScanFast() {
     Adafruit_NeoPixel& nextStrip(*strips[ _modeScanGetStrip(nextPixel) ]);
     nextStrip.setPixelColor(_modeScanGetPixelinStrip(nextPixel), modeScanState.color);
 
-    if (&prevStrip != &nextStrip) prevStrip.show();    
+    if (&prevStrip != &nextStrip) prevStrip.show();
     nextStrip.show();
 
     modeScanState.currPixel = nextPixel;
@@ -753,7 +754,7 @@ static void modeDotFast() {
                 newBrightness = currBrightness + modeDotState.brightIncrement * direction;
             }
         } else {
-            if (newBrightness < 1) { 
+            if (newBrightness < 1) {
                 direction *= -1;
                 newBrightness = currBrightness + modeDotState.brightIncrement * direction;
             }
@@ -771,26 +772,15 @@ static const Mode modeDot = { ledStripModeDot, ledStripModeDotStr, modeDotInit /
 static const Mode allModes[] = { modeOff, modeStair, modeFill, modeRainbow, modeScan, modeBlink, modeBinaryCounter, modeDot };
 static const int allModesCount = sizeof(allModes) / sizeof(allModes[0]);
 
-void initLights() {
-    for (int i=0; i < STRIP_CNT; ++i) strips[i]->begin();
-
-    StringMap params;
-    params[ledStripParamClearAllPixels] = "yes";
-    params["randomColor"] = "yes";
-    params["fast"] = "yes";
-    params["timeout"] = "5";
-    changeLedStripMode(ledStripModeFill, params);
-}
-
-void lightsFastTick() { if (allModes[info.currModeIndex].handlerTickFast != nullptr) (*(allModes[info.currModeIndex].handlerTickFast))(); }
-void lights1SecTick() { 
+static void lightsFastTick() { if (allModes[info.currModeIndex].handlerTickFast != nullptr) (*(allModes[info.currModeIndex].handlerTickFast))(); }
+static void lights1SecTick() {
     if (allModes[info.currModeIndex].handlerTick1Sec != nullptr) (*(allModes[info.currModeIndex].handlerTick1Sec))();
     checkIfModeTimedOut();
 }
-void lights5SecTick() { if (allModes[info.currModeIndex].handlerTick5Sec != nullptr) (*(allModes[info.currModeIndex].handlerTick5Sec))(); }
-void lights10SecTick() { if (allModes[info.currModeIndex].handlerTick10Sec != nullptr) (*(allModes[info.currModeIndex].handlerTick10Sec))(); }
-void lights1MinTick() { if (allModes[info.currModeIndex].handlerTick1Min != nullptr) (*(allModes[info.currModeIndex].handlerTick1Min))(); }
-void lights5MinTick() {if (allModes[info.currModeIndex].handlerTick5Min != nullptr) (*(allModes[info.currModeIndex].handlerTick5Min))(); }
+static void lights5SecTick() { if (allModes[info.currModeIndex].handlerTick5Sec != nullptr) (*(allModes[info.currModeIndex].handlerTick5Sec))(); }
+static void lights10SecTick() { if (allModes[info.currModeIndex].handlerTick10Sec != nullptr) (*(allModes[info.currModeIndex].handlerTick10Sec))(); }
+static void lights1MinTick() { if (allModes[info.currModeIndex].handlerTick1Min != nullptr) (*(allModes[info.currModeIndex].handlerTick1Min))(); }
+static void lights5MinTick() {if (allModes[info.currModeIndex].handlerTick5Min != nullptr) (*(allModes[info.currModeIndex].handlerTick5Min))(); }
 
 const char* getLightOperInfo() {
     return allModes[info.currModeIndex].ledStripModeStr;
@@ -1039,7 +1029,22 @@ int getToIntParam(const StringMap& params, const char* const paramName) {
     return getToIntParam(params, paramName, 0);
 }
 
+void initLights(TickerScheduler &ts) {
+    for (int i=0; i < STRIP_CNT; ++i) strips[i]->begin();
 
-// ----------------------------------------------------------------------
-// ----------------------------------------------------------------------
-// ----------------------------------------------------------------------
+    StringMap params;
+    params[ledStripParamClearAllPixels] = "yes";
+    params["randomColor"] = "yes";
+    params["fast"] = "yes";
+    params["timeout"] = "5";
+    changeLedStripMode(ledStripModeFill, params);
+
+    // TickerScheduler
+    const uint32_t oneSec = 1000;
+    ts.sched(lightsFastTick, 100);
+    ts.sched(lights1SecTick, oneSec);
+    ts.sched(lights5SecTick, oneSec * 5);
+    ts.sched(lights10SecTick, oneSec * 10);
+    ts.sched(lights1MinTick, oneSec * 60);
+    ts.sched(lights5MinTick, oneSec * 60 * 5);
+}

@@ -3,12 +3,16 @@
 #define _COMMON_H
 
 #include <inttypes.h>
+#include <Arduino.h>
 
-// FIXME: turn debug off
-// #define DEBUG 1
+// TODO FIXME: turn debug off
+//#define DEBUG 1
+//#define NO_MOTION_SENSOR 1
+
+class TickerScheduler;
 
 // // FWD decls... adminFlags
-void initAdminFlags();
+void initAdminFlags(TickerScheduler &ts);
 void setFlags(uint8_t flags);
 bool getFlag(int flagBit);
 bool setFlag(int flagBit);
@@ -28,13 +32,13 @@ void setMotionSensorOn();
 void clearMotionSensorOn();
 void toggleMotionSensor();
 
-void checkDisableMotionSensorBlink();  // blink indicator when motion sensor is disabled
+// void checkDisableMotionSensorBlink();  // blink indicator when motion sensor is disabled
 bool getDisableMotionSensor();  // also see getMotionSensorOperState()
 void setDisableMotionSensor();
 void clearDisableMotionSensor();
 void toggleDisableMotionSensor();
 
-bool getMotionSensorOperState() { return getMotionSensorState() && !getDisableMotionSensor(); }
+inline bool getMotionSensorOperState() { return getMotionSensorState() && !getDisableMotionSensor(); }
 
 bool getCrazyLedState();
 void setCrazyLedOn();
@@ -47,33 +51,21 @@ struct MotionInfo {
   uint8_t lastChangedMin;     // 0 to 60
   uint8_t lastChangedHour;    // 0 to 255
 };
-void initMotionSensor();
+void initMotionSensor(TickerScheduler &ts);
 void updateMotionTick1Sec();
-void debugPrintMotionSensor();
-
-
 
 // FWD decls... lights
-void initLights();
-void lightsFastTick(); // 100ms
-void lights1SecTick();
-void lights5SecTick();
-void lights10SecTick();
-void lights1MinTick();
-void lights5MinTick();
+void initLights(TickerScheduler &ts);
 
 void parseSetLightModeMessage(const char* message);
 const char* getLightOperInfo();
 
 // FWD decls...heartBeat
-void initHeartBeat();
-void heartBeatTick();
+void initHeartBeat(TickerScheduler &ts);
 
 // FWS decls... mqtt_client
-void initMyMqtt();
+void initMyMqtt(TickerScheduler &ts);
 void myMqttLoop();
-void mqtt1SecTick();
-void mqtt10MinTick();
 void sendOperState();
 void sendOperLightMode();
 
@@ -87,17 +79,6 @@ typedef struct {
     int overrideMotionPinCountdownSeconds;
 
     MotionInfo motionInfo;
-  
-    unsigned long next100time;    // 250 milliseconds timer
-    unsigned long next250time;    // 250 milliseconds timer
-    unsigned long next500time;    // 500 milliseconds timer
-    unsigned long next1000time;   // 1 second timer
-    unsigned long next5000time;   // 5 second timer
-    unsigned long next10000time;  // 10 second timer
-    unsigned long next25000time;  // 25 second timer
-    unsigned long next1mintime;   // 1 min timer
-    unsigned long next5mintime;   // 5 min timer
-    unsigned long next10mintime;  // 10 min timer
 } State;
 
 extern State state;

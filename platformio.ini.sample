@@ -1,0 +1,42 @@
+; PlatformIO Project Configuration File -- Reference example
+; Rename this file to platformio.ini and tweak the parameters below
+;
+;   Build options: build flags, source filter
+;   Upload options: custom upload port, speed and extra flags
+;   Library options: dependencies, extra library storages
+;   Advanced options: extra scripting
+;
+; Please visit documentation for the other options and examples
+; https://docs.platformio.org/page/projectconf.html
+
+; To use with https://www.adafruit.com/products/2821
+[env:huzzah]
+platform = espressif8266
+board = huzzah
+framework = arduino
+
+;; Example settings for looking at serial output. Make sure to
+;; define DEBUG, as shown in file common.h
+;monitor_port = /dev/cu.SLAB_USBtoUART
+;monitor_speed = 115200
+
+;; For using OTA, use these settings as reference. The port and
+;; password must match what is provided in include/netConfig.h file
+;upload_protocol = espota
+;upload_port = 192.168.10.202
+;upload_flags =
+;	--port=8266
+;	--auth=fa2bf646e49ab5e56f2b74480ba61017
+
+; Library options
+lib_ldf_mode = chain+
+lib_ignore =
+    WiFi101
+    SPI
+lib_deps =
+    ESP8266mDNS @ ^1.2
+    WiFiEsp @ ^2.2.2
+    ArduinoOTA @ ^1.0
+    Adafruit MQTT Library @ ^2.1.0
+    adafruit/Adafruit NeoPixel @ ^1.7.0
+    sstaub/Ticker @ ^3.2.0

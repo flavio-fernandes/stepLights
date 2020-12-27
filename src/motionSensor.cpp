@@ -1,17 +1,28 @@
 #include "common.h"
+#include "tickerScheduler.h"
 
 static const byte motionPin = 16;  /* blue wire */
 
-void initMotionSensor() {
-    pinMode(motionPin, INPUT);
-    updateMotionTick1Sec();  // initial
+static void debugPrintMotionSensor() {
+#ifdef DEBUG
+  Serial.print("Motion: ");
+  Serial.print(getMotionSensorState() ? "y " : "n "); Serial.print(getDisableMotionSensor() ? "[DISABLED] " : "");
+  Serial.print(state.motionInfo.lastChangedHour); Serial.print(":");
+  Serial.print(state.motionInfo.lastChangedMin); Serial.print(":");
+  Serial.print(state.motionInfo.lastChangedSec);
+  Serial.println("");
+#endif  // #ifdef DEBUG
 }
 
 void updateMotionTick1Sec() {
     static int initializationCountdown = 11;
+#ifdef NO_MOTION_SENSOR
+    const bool currMotionDetected = false;
+#else  // #ifdef NO_MOTION_SENSOR
     const bool currMotionDetected =
         state.overrideMotionPinCountdownSeconds > 0 ||
         (!getDisableMotionSensor() && digitalRead(motionPin) == HIGH);
+#endif
 
     if (state.overrideMotionPinCountdownSeconds > 0) {
         --state.overrideMotionPinCountdownSeconds;
@@ -34,7 +45,7 @@ void updateMotionTick1Sec() {
     }
 
     // Note: NOT using getMotionSensorOperState(), to keep bit set to what we need.
-    //       Factoring getDisableMotionSensor() in is already taken care when 
+    //       Factoring getDisableMotionSensor() in is already taken care when
     //       currMotionDetected is intantiated.
     if (getMotionSensorState() == currMotionDetected) {
         if (++state.motionInfo.lastChangedSec > 59) {
@@ -51,13 +62,12 @@ void updateMotionTick1Sec() {
     }
 }
 
-void debugPrintMotionSensor() {
-#ifdef DEBUG
-  Serial.print("Motion: ");
-  Serial.print(getMotionSensorState() ? "y " : "n "); Serial.print(getDisableMotionSensor() ? "[DISABLED] " : "");
-  Serial.print(state.motionInfo.lastChangedHour); Serial.print(":");
-  Serial.print(state.motionInfo.lastChangedMin); Serial.print(":");
-  Serial.print(state.motionInfo.lastChangedSec);
-  Serial.println("");
-#endif  // #ifdef DEBUG
+void initMotionSensor(TickerScheduler &ts) {
+    pinMode(motionPin, INPUT);
+    updateMotionTick1Sec();  // initial
+
+    // TickerScheduler
+    const uint32_t oneSec = 1000;
+    ts.sched(updateMotionTick1Sec, oneSec);
+    // ts.sched(debugPrintMotionSensor, oneSec);
 }

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "tickerScheduler.h"
 
 // Use Huzzah 8266 onboard LEDs
 // Blue light next to the antena of the ESP8266 is GPIO 2
@@ -6,12 +7,7 @@
 //
 static const byte heartBeatPin = 0;
 
-void initHeartBeat() {
-    pinMode(heartBeatPin, OUTPUT);
-    digitalWrite(heartBeatPin, LOW);
-}
-
-void heartBeatTick() {
+static void heartBeatTick() {
     static int hbValue = 0;
 #if 0
     // TODO: analogWrite is causing noise with the neopixels... let's keep it
@@ -33,4 +29,10 @@ void heartBeatTick() {
     digitalWrite(heartBeatPin, hbValue < 2 ? LOW : HIGH);
     hbValue &= B00011111;  // https://www.arduino.cc/reference/en/language/structure/bitwise-operators/
 #endif // #if 0
+}
+
+void initHeartBeat(TickerScheduler &ts) {
+    pinMode(heartBeatPin, OUTPUT);
+    digitalWrite(heartBeatPin, LOW);
+    ts.sched(heartBeatTick, 100);
 }
